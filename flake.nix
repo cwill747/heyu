@@ -21,7 +21,6 @@
           black
           isort
           mypy
-          pre-commit
         ]);
       in
       {
