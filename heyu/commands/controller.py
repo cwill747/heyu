@@ -1,7 +1,10 @@
 """High-level command controller for X10 devices."""
 
 import logging
-from typing import Optional
+import time
+import struct
+from datetime import datetime
+from typing import Optional, Dict, Any
 
 from ..serial import CM11AInterface
 from ..protocol import X10Protocol, X10Address, X10Command, HouseCode, ExtendedCommand
@@ -312,6 +315,123 @@ class X10Commands:
             error_msg = f"Failed to execute {extended_command.name} on {address}: {e}"
             logger.error(error_msg)
             raise CommandExecutionError(error_msg)
+    
+    def setclock(self) -> bool:
+        """
+        Set CM11A clock to current system time.
+        
+        The CM11A has an internal clock that needs to be synchronized
+        with the system clock for proper timer and macro operation.
+        
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        try:
+            # Get current system time
+            now = datetime.now()
+            
+            # Convert to CM11A clock format  
+            # Based on original Heyu setclock.c implementation
+            clock_data = self._encode_clock_data(now)
+            
+            # Send clock set command to CM11A
+            interface = self._get_interface()
+            with interface:
+                response = interface.send_command(clock_data)
+            
+            logger.info(f"CM11A clock set to {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to set CM11A clock: {e}"
+            logger.error(error_msg)
+            raise CommandExecutionError(error_msg)
+    
+    def readclock(self) -> Dict[str, Any]:
+        """
+        Read current time from CM11A and compare with system time.
+        
+        Returns:
+            Dictionary containing CM11A time, system time, and comparison
+            
+        Raises:
+            CommandError: If command fails
+        """
+        try:
+            # Send status request to get clock info
+            # The CM11A status includes current time information
+            interface = self._get_interface()
+            
+            # Status request command (0x8B)
+            status_cmd = bytes([0x8B])
+            
+            with interface:
+                response = interface.send_command(status_cmd)
+                # Read status response (typically 14 bytes)
+                status_data = interface.read_response(14)
+            
+            # Decode the clock information from status response
+            # Note: This is a simplified version - full implementation would 
+            # need to properly decode the CM11A status format
+            system_time = datetime.now()
+            
+            result = {
+                'system_time': system_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'cm11a_time': 'Clock reading not fully implemented',
+                'status': 'Basic status request sent',
+                'raw_response': status_data.hex() if status_data else 'No response'
+            }
+            
+            logger.info(f"Clock status retrieved: {result['status']}")
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to read CM11A clock: {e}"
+            logger.error(error_msg)
+            raise CommandExecutionError(error_msg)
+    
+    def _encode_clock_data(self, dt: datetime) -> bytes:
+        """
+        Encode datetime into CM11A clock format.
+        
+        Based on original Heyu setclock implementation:
+        - Byte 0: 0x9B (timer download code)
+        - Byte 1: seconds (0-59)
+        - Byte 2: minutes + (hour%2)*60 (0-119) 
+        - Byte 3: hour/2 (0-11)
+        - Byte 4: day of year % 256
+        - Byte 5: (day of year / 256) << 7 | day of week mask
+        - Byte 6: housecode << 4 | clear flag
+        
+        Args:
+            dt: Datetime to encode
+            
+        Returns:
+            7-byte clock data for CM11A
+        """
+        # Calculate day of year (1-366)
+        day_of_year = dt.timetuple().tm_yday
+        
+        # Day of week mask (bit position for day: 0=Sun, 1=Mon, etc.)
+        day_mask = 1 << dt.weekday() if dt.weekday() < 6 else 1  # Monday=0 in weekday()
+        
+        # Default housecode A (0x6)
+        housecode = 0x6
+        
+        clock_data = [
+            0x9B,                                           # Timer download code
+            dt.second,                                      # Seconds (0-59)
+            dt.minute + ((dt.hour % 2) * 60),              # Minutes 0-119
+            dt.hour // 2,                                   # Hour/2 (0-11) 
+            day_of_year % 256,                             # Day of year mantissa
+            ((day_of_year // 256) << 7) | day_mask,       # Day of year radix + day mask
+            (housecode << 4) | 0                           # Housecode + clear flag
+        ]
+        
+        return bytes(clock_data)
     
     def status(self) -> dict:
         """

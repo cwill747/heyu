@@ -346,6 +346,43 @@ def xstatus(ctx: click.Context, address: str):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
+# Clock Management Commands
+@cli.command()
+@click.pass_context
+def setclock(ctx: click.Context):
+    """Set CM11A clock to current system time."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.setclock():
+            click.echo("CM11A clock set to current system time")
+        else:
+            click.echo("Failed to set CM11A clock", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.pass_context
+def readclock(ctx: click.Context):
+    """Display CM11A and system clocks."""
+    commands = ctx.obj['commands']
+    
+    try:
+        result = commands.readclock()
+        click.echo("Clock Information:")
+        click.echo(f"  System Time: {result['system_time']}")
+        click.echo(f"  CM11A Time:  {result['cm11a_time']}")
+        click.echo(f"  Status:      {result['status']}")
+        
+        if ctx.obj['verbose'] and 'raw_response' in result:
+            click.echo(f"  Raw Response: {result['raw_response']}")
+            
+    except (CommandError, SerialError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
 # Add some common aliases
 cli.add_command(help_extended, name='help')
 

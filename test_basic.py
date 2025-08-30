@@ -103,6 +103,7 @@ def test_commands():
     try:
         from heyu.config import HeyuConfig
         from heyu.commands import X10Commands
+        from datetime import datetime
         
         config = HeyuConfig()
         commands = X10Commands(config)
@@ -112,6 +113,13 @@ def test_commands():
         assert 'serial_port' in status
         assert 'supported_commands' in status
         print("✓ Command controller status works")
+        
+        # Test clock encoding (doesn't require hardware)
+        test_time = datetime(2024, 6, 15, 14, 30, 45)
+        clock_data = commands._encode_clock_data(test_time)
+        assert len(clock_data) == 7
+        assert clock_data[0] == 0x9B  # Timer download code
+        print("✓ Clock data encoding works")
         
     except Exception as e:
         print(f"✗ Commands test failed: {e}")
