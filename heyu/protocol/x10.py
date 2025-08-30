@@ -91,6 +91,16 @@ class X10Command(IntEnum):
     STATUS_OFF = 0x0E
     STATUS_REQUEST = 0x0F
 
+class ExtendedCommand(IntEnum):
+    """Extended X10 command codes."""
+    EXTENDED_PRESET = 0x31      # xpreset, xdim
+    EXTENDED_ALL_ON = 0x33      # xallon
+    EXTENDED_ALL_OFF = 0x34     # xalloff  
+    EXTENDED_STATUS = 0x37      # xstatus
+    EXTENDED_CONFIG = 0x3B      # xconfig
+    EXTENDED_FULL_ON = 0xFE     # xon
+    EXTENDED_FULL_OFF = 0xFD    # xoff
+
 @dataclass
 class X10Address:
     """Represents an X10 address (house code + unit code)."""
@@ -216,6 +226,60 @@ class X10Protocol:
             return bytes([header, function_byte])
         except Exception as e:
             raise EncodingError(f"Failed to encode house command: {e}")
+    
+    def encode_extended_command(self, address: X10Address, extended_command: ExtendedCommand, 
+                               data: int = 0, ramp_rate: int = 0) -> bytes:
+        """
+        Encode an extended X10 command into CM11A format.
+        
+        Extended commands use the EXTENDED_CODE function (0x07) followed by:
+        - Header byte (0x06 for extended commands)
+        - Address byte (house code + unit code)  
+        - Function byte (house code + EXTENDED_CODE)
+        - Extended type byte (command-specific)
+        - Extended data byte (level, etc.)
+        
+        Args:
+            address: X10 address
+            extended_command: Extended command type
+            data: Optional data byte (e.g., dim level 0-31)
+            ramp_rate: Optional ramp rate for dimming (0-3)
+            
+        Returns:
+            Encoded bytes for CM11A
+            
+        Raises:
+            EncodingError: If encoding fails
+        """
+        try:
+            # Extended commands have 6-byte format
+            header = 0x06  # Extended command header
+            address_byte = (address.house_code.value << 4) | address.unit_code.value
+            function_byte = (address.house_code.value << 4) | X10Command.EXTENDED_CODE.value
+            extended_type = extended_command.value
+            
+            # Handle data byte based on command type
+            if extended_command == ExtendedCommand.EXTENDED_PRESET:
+                # xpreset/xdim: data is dim level (0-31), ramp rate can be specified
+                if not 0 <= data <= 31:
+                    raise EncodingError(f"Extended preset data must be 0-31, got {data}")
+                extended_data = data
+            elif extended_command in (ExtendedCommand.EXTENDED_FULL_ON, ExtendedCommand.EXTENDED_FULL_OFF):
+                # xon/xoff: no additional data needed
+                extended_data = 0
+            elif extended_command == ExtendedCommand.EXTENDED_STATUS:
+                # xstatus: status request
+                extended_data = 0
+            elif extended_command == ExtendedCommand.EXTENDED_CONFIG:
+                # xconfig: configuration data
+                extended_data = data
+            else:
+                extended_data = data
+            
+            return bytes([header, address_byte, function_byte, extended_type, extended_data])
+            
+        except Exception as e:
+            raise EncodingError(f"Failed to encode extended command: {e}")
     
     def decode_response(self, data: bytes) -> dict:
         """

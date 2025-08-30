@@ -41,7 +41,7 @@ def test_protocol():
     print("\nTesting protocol...")
     
     try:
-        from heyu.protocol import X10Address, X10Protocol, HouseCode, UnitCode, X10Command
+        from heyu.protocol import X10Address, X10Protocol, HouseCode, UnitCode, X10Command, ExtendedCommand
         
         # Test address parsing
         addr = X10Address.from_string('A1')
@@ -55,6 +55,12 @@ def test_protocol():
         command_bytes = protocol.encode_address_command(addr, X10Command.ON)
         assert len(command_bytes) == 3
         print("✓ Command encoding works")
+        
+        # Test extended command encoding
+        ext_bytes = protocol.encode_extended_command(addr, ExtendedCommand.EXTENDED_PRESET, 15)
+        assert len(ext_bytes) == 5
+        assert ext_bytes[3] == 0x31  # Extended preset code
+        print("✓ Extended command encoding works")
         
         # Test address validation
         assert protocol.validate_address('A1') == True

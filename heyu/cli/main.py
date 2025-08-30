@@ -258,6 +258,94 @@ For more information, see the original Heyu documentation.
 """
     click.echo(help_text)
 
+# Extended X10 Commands
+@cli.command()
+@click.argument('address')
+@click.argument('level', type=int)
+@click.pass_context
+def xpreset(ctx: click.Context, address: str, level: int):
+    """Extended preset dim command (0-31 or 0-100%)."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.xpreset(address, level):
+            click.echo(f"Extended preset {address} to level {level}")
+        else:
+            click.echo(f"Failed to set extended preset {address}", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError, InvalidAddressError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument('address')  
+@click.argument('level', type=int)
+@click.pass_context
+def xdim(ctx: click.Context, address: str, level: int):
+    """Extended dim command (0-31 or 0-100%)."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.xdim(address, level):
+            click.echo(f"Extended dim {address} to level {level}")
+        else:
+            click.echo(f"Failed to extended dim {address}", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError, InvalidAddressError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument('address')
+@click.pass_context  
+def xon(ctx: click.Context, address: str):
+    """Extended full ON command."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.xon(address):
+            click.echo(f"Extended ON {address}")
+        else:
+            click.echo(f"Failed to turn on {address}", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError, InvalidAddressError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument('address')
+@click.pass_context
+def xoff(ctx: click.Context, address: str):
+    """Extended full OFF command."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.xoff(address):
+            click.echo(f"Extended OFF {address}")
+        else:
+            click.echo(f"Failed to turn off {address}", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError, InvalidAddressError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.argument('address')
+@click.pass_context
+def xstatus(ctx: click.Context, address: str):
+    """Extended status request."""
+    commands = ctx.obj['commands']
+    
+    try:
+        if commands.xstatus(address):
+            click.echo(f"Extended status request sent to {address}")
+        else:
+            click.echo(f"Failed to request status from {address}", err=True)
+            sys.exit(1)
+    except (CommandError, SerialError, InvalidAddressError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
 # Add some common aliases
 cli.add_command(help_extended, name='help')
 

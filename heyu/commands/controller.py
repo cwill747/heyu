@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from ..serial import CM11AInterface
-from ..protocol import X10Protocol, X10Address, X10Command, HouseCode
+from ..protocol import X10Protocol, X10Address, X10Command, HouseCode, ExtendedCommand
 from ..config import HeyuConfig
 from .exceptions import CommandError, DeviceNotFoundError, CommandExecutionError
 
@@ -190,6 +190,126 @@ class X10Commands:
             
         except Exception as e:
             error_msg = f"Failed to execute {command.name} on {address}: {e}"
+            logger.error(error_msg)
+            raise CommandExecutionError(error_msg)
+    
+    def xpreset(self, address: str, level: int) -> bool:
+        """
+        Set extended preset dim level for an X10 device.
+        
+        Args:
+            address: Device address (e.g., 'A1' or alias name)
+            level: Preset level (0-31, or percentage 0-100)
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        # Convert percentage to X10 dim level if needed
+        if level > 31:
+            level = int(level * 31 / 100)
+        
+        return self._execute_extended_command(address, ExtendedCommand.EXTENDED_PRESET, level)
+    
+    def xdim(self, address: str, level: int) -> bool:
+        """
+        Extended dim command (alias for xpreset).
+        
+        Args:
+            address: Device address (e.g., 'A1' or alias name)
+            level: Dim level (0-31, or percentage 0-100)
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        return self.xpreset(address, level)
+    
+    def xon(self, address: str) -> bool:
+        """
+        Extended full on command for advanced X10 devices.
+        
+        Args:
+            address: Device address (e.g., 'A1' or alias name)
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        return self._execute_extended_command(address, ExtendedCommand.EXTENDED_FULL_ON)
+    
+    def xoff(self, address: str) -> bool:
+        """
+        Extended full off command for advanced X10 devices.
+        
+        Args:
+            address: Device address (e.g., 'A1' or alias name)
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        return self._execute_extended_command(address, ExtendedCommand.EXTENDED_FULL_OFF)
+    
+    def xstatus(self, address: str) -> bool:
+        """
+        Extended status request for advanced X10 devices.
+        
+        Args:
+            address: Device address (e.g., 'A1' or alias name)
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        return self._execute_extended_command(address, ExtendedCommand.EXTENDED_STATUS)
+    
+    def _execute_extended_command(self, address: str, extended_command: ExtendedCommand, 
+                                data: int = 0) -> bool:
+        """
+        Execute an extended command on a device.
+        
+        Args:
+            address: Device address or alias
+            extended_command: Extended X10 command
+            data: Optional command data
+            
+        Returns:
+            True if successful
+            
+        Raises:
+            CommandError: If command fails
+        """
+        try:
+            # Resolve alias to address
+            resolved_address = self.config.resolve_address(address)
+            
+            # Parse X10 address
+            x10_address = X10Address.from_string(resolved_address)
+            
+            # Encode extended command
+            command_bytes = self.protocol.encode_extended_command(x10_address, extended_command, data)
+            
+            # Send command via interface
+            interface = self._get_interface()
+            with interface:
+                response = interface.send_command(command_bytes)
+            
+            logger.info(f"Extended command {extended_command.name} sent to {resolved_address} (alias: {address})")
+            return True
+            
+        except Exception as e:
+            error_msg = f"Failed to execute {extended_command.name} on {address}: {e}"
             logger.error(error_msg)
             raise CommandExecutionError(error_msg)
     
