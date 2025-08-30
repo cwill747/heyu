@@ -376,9 +376,80 @@ def readclock(ctx: click.Context):
         click.echo(f"  CM11A Time:  {result['cm11a_time']}")
         click.echo(f"  Status:      {result['status']}")
         
+        if 'battery_status' in result:
+            click.echo(f"  Battery:     {result['battery_status']}")
+        if 'firmware_revision' in result:
+            click.echo(f"  Firmware:    Rev {result['firmware_revision']}")
+        if 'house_code' in result:
+            click.echo(f"  House Code:  {result['house_code']}")
+        
         if ctx.obj['verbose'] and 'raw_response' in result:
             click.echo(f"  Raw Response: {result['raw_response']}")
             
+    except (CommandError, SerialError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.option('--details', is_flag=True, help='Show detailed device status')
+@click.pass_context
+def poll(ctx: click.Context, details: bool):
+    """Poll CM11A for status and buffered data."""
+    commands = ctx.obj['commands']
+    
+    try:
+        result = commands.poll_status(show_details=details)
+        click.echo(f"Poll Results ({result['timestamp']}):")
+        
+        if result['buffered_data']:
+            click.echo(f"  Buffered Data: {result['buffered_data']['raw']} ({result['buffered_data']['length']} bytes)")
+        else:
+            click.echo("  No buffered data")
+        
+        if result['status']:
+            status = result['status']
+            click.echo("  CM11A Status:")
+            click.echo(f"    Battery:     {status['battery_usage']}")
+            click.echo(f"    Firmware:    Rev {status['firmware_revision']}")
+            click.echo(f"    House Code:  {status['house_code']}")
+            click.echo(f"    Clock:       {status['clock']} (Day {status['day_of_year']})")
+            
+            if details:
+                click.echo(f"    Last Addressed: {status['last_addressed_devices']}")
+                click.echo(f"    Monitored:      {status['monitored_device_status']}")
+                click.echo(f"    Dimmed:         {status['dimmed_device_status']}")
+                
+        else:
+            click.echo("  No status available")
+            
+    except (CommandError, SerialError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+@cli.command()
+@click.option('--duration', '-d', type=int, default=60, help='Monitor duration in seconds')
+@click.pass_context
+def monitor(ctx: click.Context, duration: int):
+    """Monitor X10 powerline activity."""
+    commands = ctx.obj['commands']
+    
+    try:
+        click.echo(f"Monitoring X10 powerline for {duration} seconds...")
+        click.echo("Press Ctrl+C to stop early")
+        
+        activities = commands.monitor_powerline(duration)
+        
+        if activities:
+            click.echo(f"\nDetected {len(activities)} X10 activities:")
+            for activity in activities:
+                click.echo(f"  {activity['time_str']} - {activity['raw_data']} ({activity['data_length']} bytes)")
+                if 'house_function' in activity:
+                    click.echo(f"    House/Function: {activity['house_function']}, Address: {activity['address_data']}")
+        else:
+            click.echo("\nNo X10 activity detected")
+            
+    except KeyboardInterrupt:
+        click.echo("\nMonitoring interrupted by user")
     except (CommandError, SerialError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

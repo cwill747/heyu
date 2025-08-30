@@ -4,7 +4,7 @@ import logging
 import time
 import struct
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from ..serial import CM11AInterface
 from ..protocol import X10Protocol, X10Address, X10Command, HouseCode, ExtendedCommand
@@ -435,16 +435,149 @@ class X10Commands:
     
     def status(self) -> dict:
         """
-        Get system status information.
+        Get comprehensive system status information.
         
         Returns:
-            Dictionary with status information
+            Dictionary with status information including CM11A status
         """
         interface = self._get_interface()
         
-        return {
+        basic_status = {
             'serial_port': self.config.tty,
             'connected': interface.is_connected() if hasattr(interface, 'is_connected') else False,
             'aliases_count': len(self.config.aliases),
             'supported_commands': self.protocol.get_supported_commands()
         }
+        
+        # Try to get CM11A status if connected
+        if basic_status['connected']:
+            try:
+                with interface:
+                    status_data = interface.get_status()
+                    if status_data:
+                        cm11a_status = CM11AStatusParser.parse_status(status_data)
+                        
+                        basic_status.update({
+                            'cm11a_connected': True,
+                            'battery_usage': CM11AStatusParser.format_battery_status(cm11a_status.battery_usage_minutes),
+                            'firmware_revision': cm11a_status.firmware_revision,
+                            'house_code': cm11a_status.house_code,
+                            'last_addressed_devices': f"0x{cm11a_status.last_addressed_devices:04X}",
+                            'monitored_device_status': f"0x{cm11a_status.monitored_device_status:04X}",
+                            'dimmed_device_status': f"0x{cm11a_status.dimmed_device_status:04X}",
+                        })
+                    else:
+                        basic_status['cm11a_connected'] = False
+            except Exception as e:
+                logger.warning(f"Could not get CM11A status: {e}")
+                basic_status['cm11a_connected'] = False
+                basic_status['cm11a_error'] = str(e)
+        
+        return basic_status
+    
+    def monitor_powerline(self, duration: int = 60) -> List[Dict[str, Any]]:
+        """
+        Monitor X10 powerline activity for specified duration.
+        
+        Args:
+            duration: Monitoring duration in seconds
+            
+        Returns:
+            List of detected X10 activities
+        """
+        interface = self._get_interface()
+        activities = []
+        
+        try:
+            with interface:
+                start_time = time.time()
+                logger.info(f"Starting powerline monitoring for {duration} seconds")
+                
+                while time.time() - start_time < duration:
+                    # Check for poll requests (incoming X10 activity)
+                    poll_data = interface.check_for_poll(timeout=1.0)
+                    
+                    if poll_data:
+                        timestamp = time.time()
+                        activity = {
+                            'timestamp': timestamp,
+                            'time_str': datetime.fromtimestamp(timestamp).strftime('%H:%M:%S.%f')[:-3],
+                            'raw_data': poll_data.hex(),
+                            'data_length': len(poll_data)
+                        }
+                        
+                        # Basic attempt to decode the activity
+                        if len(poll_data) >= 2:
+                            activity['house_function'] = f"0x{poll_data[0]:02X}"
+                            activity['address_data'] = f"0x{poll_data[1]:02X}"
+                        
+                        activities.append(activity)
+                        logger.info(f"Detected X10 activity: {activity['raw_data']}")
+                
+                logger.info(f"Monitoring completed. Detected {len(activities)} activities.")
+                return activities
+                
+        except Exception as e:
+            error_msg = f"Powerline monitoring failed: {e}"
+            logger.error(error_msg)
+            raise CommandExecutionError(error_msg)
+    
+    def poll_status(self, show_details: bool = False) -> Dict[str, Any]:
+        """
+        Poll CM11A for status and any buffered data.
+        
+        Args:
+            show_details: Whether to include detailed device status
+            
+        Returns:
+            Dictionary with current status and any buffered data
+        """
+        interface = self._get_interface()
+        
+        try:
+            with interface:
+                result = {
+                    'timestamp': datetime.now().isoformat(),
+                    'buffered_data': None,
+                    'status': None
+                }
+                
+                # Check for any buffered data from incoming X10 commands
+                poll_data = interface.check_for_poll(timeout=0.5)
+                if poll_data:
+                    result['buffered_data'] = {
+                        'raw': poll_data.hex(),
+                        'length': len(poll_data)
+                    }
+                    logger.info(f"Found buffered data: {poll_data.hex()}")
+                
+                # Get current CM11A status
+                status_data = interface.get_status()
+                if status_data:
+                    cm11a_status = CM11AStatusParser.parse_status(status_data)
+                    
+                    status_info = {
+                        'battery_usage': CM11AStatusParser.format_battery_status(cm11a_status.battery_usage_minutes),
+                        'firmware_revision': cm11a_status.firmware_revision,
+                        'house_code': cm11a_status.house_code,
+                        'clock': f"{cm11a_status.hours:02d}:{cm11a_status.minutes:02d}:{cm11a_status.seconds:02d}",
+                        'day_of_year': cm11a_status.day_of_year
+                    }
+                    
+                    if show_details:
+                        status_info.update({
+                            'last_addressed_devices': CM11AStatusParser.format_device_bitmap(cm11a_status.last_addressed_devices),
+                            'monitored_device_status': CM11AStatusParser.format_device_bitmap(cm11a_status.monitored_device_status),
+                            'dimmed_device_status': CM11AStatusParser.format_device_bitmap(cm11a_status.dimmed_device_status),
+                            'day_of_week_mask': f"0x{cm11a_status.day_of_week_mask:02X}",
+                            'raw_status': status_data.hex()
+                        })
+                    
+                    result['status'] = status_info
+                
+                return result
+                
+        except Exception as e:
+            error_msg = f"Status polling failed: {e}"
+            logger.error(error_msg)
+            raise CommandExecutionError(error_msg)
